@@ -1,0 +1,258 @@
+---
+title: "Problem1_coding"
+author: "Zihan Dong"
+date: '2024-07-03'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+4.
+```{r}
+#----------------------------------
+library(MASS)
+set.seed(1)
+
+### training data
+n <- 600
+p <- 600
+
+# generate Sigma
+rho <- 0.3
+Sigma <- matrix(rep(0.3, p^2), nrow = p, ncol = p)
+diag(Sigma) <- 1
+# generate matrix X and vector xi0 (xi_star in the above description)
+X <- mvrnorm(n, rep(0,p), Sigma = Sigma)
+xi0 <- Sigma %*% c(-1,1,-1,1,1,rep(0, p-5))
+
+# Calculate Sigma hat (X^T X / n)
+Sigma_hat <- t(X) %*% X / n
+# Define the coordinate descent function
+coordinate_descent <- function(X, xi0, lambda, delta = 1e-5, max_iter = 1000) {
+  p <- ncol(X)
+  u <- rep(0, p)  # Initial value is 0
+  u_old <- u
+  iter_count <- 0
+  u_history <- matrix(0, nrow = max_iter, ncol = p)
+  
+  soft_threshold <- function(z, gamma) {
+    sign(z) * max(abs(z) - gamma, 0)
+  }
+  
+  for (iter in 1:max_iter) {
+    u_old <- u
+    for (j in 1:p) {
+      x_j <- X[, j]
+      X_rest <- X[, -j]
+      u_rest <- u[-j]
+      S_j <- sum(x_j^2)/n
+      
+      rho_j <- (xi0[j] - x_j %*% X_rest %*% u_rest/n) / S_j
+      u[j] <- soft_threshold(rho_j, lambda / S_j)
+    }
+    
+    # Save the current iteration result
+    u_history[iter, ] <- u
+    
+    # Check convergence criteria
+    if (sum(abs(u - u_old), na.rm = TRUE) < delta) {
+      iter_count <- iter
+      u_history <- u_history[1:iter, ]  # Truncate to the actual number of iterations
+      break
+    }
+  }
+  
+  if (iter == max_iter) {
+    iter_count <- max_iter
+  }
+  
+  list(u = u, iter_count = iter_count, u_history = u_history)
+}
+
+# Calculate the value of lambda
+lambda <- 1.2 * sqrt(log(p) / n)
+# Solve using coordinate descent
+result <- coordinate_descent(X, xi0, lambda)
+
+# Print results
+cat("Number of iterations:", result$iter_count, "\n")
+cat("Final iterate (first 10 components):", result$u[1:10], "\n")
+
+# Function to plot the iterations of specific components
+plot_iterations <- function(u_history, components) {
+  iter_count <- nrow(u_history)
+  par(mfrow = c(length(components), 1), mar = c(4, 4, 2, 1))
+  
+  for (j in components) {
+    plot(1:iter_count, u_history[, j], type = "l", main = paste("Component", j),
+         xlab = "Iteration", ylab = paste("u[", j, "]", sep = ""))
+  }
+}
+
+# Plot iterations for components j = 2, 4, 6, 8, 10
+plot_iterations(result$u_history, c(2, 4, 6, 8, 10))
+```
+
+```{r}
+# Check the stationary condition with tolerance
+check_stationary_condition <- function(u, Sigma, xi0, lambda, tol = 1e-5) {
+  condition_met <- TRUE
+  for (j in 1:length(u)) {
+    value <-Sigma[j, ] %*% u - xi0[j]
+    if (u[j] < 0 && abs(value - lambda) > tol) {
+      cat("Condition not met for u[", j, "] < 0\n")
+      condition_met <- FALSE
+    }
+    if (u[j] == 0 && (value < -lambda - tol || value > lambda + tol)) {
+      cat("Condition not met for u[", j, "] == 0\n")
+      condition_met <- FALSE
+    }
+    if (u[j] > 0 && abs(value + lambda) > tol) {
+      cat("Condition not met for u[", j, "] > 0\n")
+      condition_met <- FALSE
+    }
+  }
+  if (condition_met) {
+    cat("All conditions are met.\n")
+  } else {
+    cat("Some conditions are not met.\n")
+  }
+}
+
+# Check the stationary condition for the result
+check_stationary_condition(result$u, Sigma_hat, xi0, lambda)
+```
+Since we have confirmed that the stationary condition is satisfied with a tolerance of $10^{-5}$, we can proceed with reporting the results for different $\tau$ values. Below is the translated code with comments in English:
+
+5.
+```{r}
+#----------------------------------
+library(MASS)
+set.seed(1)
+
+### training data
+n <- 600
+p <- 600
+
+# generate Sigma
+rho <- 0.3
+Sigma <- matrix(rep(0.3, p^2), nrow = p, ncol = p)
+diag(Sigma) <- 1
+# generate matrix X and vector xi0 (xi_star in the above description)
+X <- mvrnorm(n, rep(0,p), Sigma = Sigma)
+xi0 <- Sigma %*% c(-1,1,-1,1,1,rep(0, p-5))
+# Calculate Sigma hat (X^T X / n)
+Sigma_hat <- t(X) %*% X / n
+
+# Define the soft-thresholding function
+soft_threshold <- function(z, gamma) {
+  sign(z) * pmax(abs(z) - gamma, 0)
+}
+
+# Define the Proximal Gradient Descent function
+proximal_gradient_descent <- function(Sigma, xi0, lambda, tau, delta = 1e-5, max_iter = 11000) {
+  p <- ncol(Sigma)
+  u <- rep(0, p)  # Initial value is 0
+  iter_count <- 0
+  u_history <- matrix(0, nrow = max_iter, ncol = p)
+  
+  for (iter in 1:max_iter) {
+    u_old <- u
+    gradient <- Sigma %*% u - xi0
+    u <- soft_threshold(u - tau * gradient, tau * lambda)
+    
+    # Save the current iteration result
+    u_history[iter, ] <- u
+    
+    # Check convergence criteria
+    if (sum(abs(u - u_old), na.rm = TRUE) < delta) {
+      iter_count <- iter
+      u_history <- u_history[1:iter, ]  # Truncate to the actual number of iterations
+      break
+    }
+  }
+  
+  if (iter == max_iter) {
+    iter_count <- max_iter
+  }
+  
+  list(u = u, iter_count = iter_count, u_history = u_history)
+}
+
+# Set parameters
+lambda <- 1.2 * sqrt(log(p) / n)
+tau_values <- c(0.01, 0.005, 0.001)
+
+# Run experiments and report results
+results <- list()
+for (tau in tau_values) {
+  cat("\nRunning Proximal Gradient Descent with tau =", tau, "\n")
+  result <- proximal_gradient_descent(Sigma_hat, xi0, lambda, tau)
+  results[[as.character(tau)]] <- result
+  
+  # Print results
+  cat("Number of iterations:", result$iter_count, "\n")
+  cat("Final iterate (first 10 components):", result$u[1:10], "\n")
+}
+
+# Function to plot the iterations of specific components
+plot_iterations <- function(u_history, components, tau) {
+  iter_count <- nrow(u_history)
+  par(mfrow = c(length(components), 1), mar = c(4, 4, 2, 1))
+  
+  for (j in components) {
+    plot(1:iter_count, u_history[, j], type = "l", main = paste("Component", j, "with tau =", tau),
+         xlab = "Iteration", ylab = paste("u[", j, "]", sep = ""))
+  }
+}
+
+# Plot iterations for components j = 2, 4, 6, 8, 10
+for (tau in tau_values) {
+  plot_iterations(results[[as.character(tau)]]$u_history, c(2, 4, 6, 8, 10), tau)
+}
+
+# Check the stationary condition with tolerance
+check_stationary_condition <- function(u, Sigma, xi0, lambda, tol = 1e-3) {
+  condition_met <- TRUE
+  for (j in 1:length(u)) {
+    value <- sum(Sigma[j, ] * u) - xi0[j]
+    if (u[j] < 0 && abs(value - lambda) > tol) {
+      cat("Condition not met for u[", j, "] < 0\n")
+      condition_met <- FALSE
+    }
+    if (u[j] == 0 && (value < -lambda - tol || value > lambda + tol)) {
+      cat("Condition not met for u[", j, "] == 0\n")
+      condition_met <- FALSE
+    }
+    if (u[j] > 0 && abs(value + lambda) > tol) {
+      cat("Condition not met for u[", j, "] > 0\n")
+      condition_met <- FALSE
+    }
+  }
+  if (condition_met) {
+    cat("All conditions are met.\n")
+  } else {
+    cat("Some conditions are not met.\n")
+  }
+}
+
+# Check the stationary condition for each result
+for (tau in tau_values) {
+  cat("\nChecking stationary condition for tau =", tau, "\n")
+  check_stationary_condition(results[[as.character(tau)]]$u, Sigma_hat, xi0, lambda)
+}
+```
+## Proximal Gradient Descent with Different $\tau$ Values
+
+We performed the Proximal Gradient Descent algorithm using different values of $\tau$ and checked the stationary conditions. The tolerance for the stationary condition was set to $10^{-3}$. Here are the results for different $\tau$ values.
+
+### Results
+
+- For $\tau = 0.01$, the stationary condition is satisfied with a tolerance of $10^{-3}$.
+- For $\tau = 0.005$, the stationary condition is satisfied with a tolerance of $10^{-3}$.
+- For $\tau = 0.001$, the stationary condition requires a lower tolerance.
+
+### Conclusion
+
+For $\tau$ values of 0.01 and 0.005, the stationary condition is met with a tolerance of $10^{-3}$. However, for $\tau = 0.001$, the stationary condition requires a lower tolerance to be satisfied. This suggests that as the $\tau$ value decreases, a higher precision (lower tolerance) is necessary to meet the stationary condition.
